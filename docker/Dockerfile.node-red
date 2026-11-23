@@ -3,7 +3,7 @@ FROM node:24-bookworm-slim
 WORKDIR /opt/celda
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
-COPY settings.js flows.json flows-opc-demo.json flows-plc.json ./
+COPY settings.js flows.json ./
 COPY docker/node-red-entrypoint.sh ./docker/node-red-entrypoint.sh
 RUN mkdir -p /data && chown -R node:node /data /opt/celda
 

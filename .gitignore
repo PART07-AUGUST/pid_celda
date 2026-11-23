@@ -1,5 +1,5 @@
 node_modules/
-.config.*.json
+.config.*.json*
 .config.runtime.json*
 .sessions.json
 .flows.json.backup
@@ -9,7 +9,7 @@ context/
 lib/
 projects/
 *.log
-.env.plc
+.env*
 certs/
 .venv/
 __pycache__/

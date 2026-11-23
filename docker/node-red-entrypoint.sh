@@ -1,11 +1,11 @@
 #!/bin/sh
 set -eu
 
-flow_file="${FLOW_FILE:-flows-opc-demo.json}"
-case "$flow_file" in
-  flows.json|flows-opc-demo.json|flows-plc.json) ;;
-  *) echo "FLOW_FILE no permitido: $flow_file" >&2; exit 1 ;;
-esac
+flow_file="${FLOW_FILE:-flows.json}"
+if [ "$flow_file" != "flows.json" ]; then
+  echo "FLOW_FILE no permitido: $flow_file" >&2
+  exit 1
+fi
 
 if [ ! -e /data/node_modules ]; then
   ln -s /opt/celda/node_modules /data/node_modules

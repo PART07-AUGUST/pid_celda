@@ -1,22 +1,8 @@
 services:
-  - type: pserv
-    name: pid-celda-opcua-demo
-    runtime: docker
-    plan: 0.5c-512mb
-    region: oregon
-    dockerfilePath: ./docker/Dockerfile.softsensor
-    dockerContext: .
-    autoDeployTrigger: commit
-    envVars:
-      - key: SOFTSENSOR_MODE
-        value: server
-      - key: DEMO_OPCUA_BIND
-        value: opc.tcp://0.0.0.0:4840/celda/
-
   - type: web
     name: pid-celda-dashboard
     runtime: docker
-    plan: 0.5c-512mb
+    plan: free
     region: oregon
     dockerfilePath: ./docker/Dockerfile.node-red
     dockerContext: .
@@ -24,15 +10,8 @@ services:
     healthCheckPath: /dashboard/celda
     envVars:
       - key: FLOW_FILE
-        value: flows-opc-demo.json
-      - key: CELDA_MODE
-        value: opc
+        value: flows.json
       - key: NODE_RED_DISABLE_EDITOR
         value: "1"
       - key: NODE_RED_CREDENTIAL_SECRET
         generateValue: true
-      - key: OPCUA_HOST
-        fromService:
-          type: pserv
-          name: pid-celda-opcua-demo
-          property: host

@@ -1,16 +1,15 @@
 {
   "name": "dashboard-celda-flotacion",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Dashboard Node-RED para DB_Flotacion de un SIMATIC S7-1200",
+  "description": "Control PID simulado para el nivel de una celda de flotación con Node-RED",
   "scripts": {
-    "build:flow": "node scripts/build-flow.mjs --variant=local && node scripts/build-flow.mjs --variant=opc-demo && node scripts/build-flow.mjs --variant=plc",
+    "build:flow": "node scripts/build-flow.mjs",
     "start": "npm run build:flow && node-red --userDir . --settings settings.js flows.json",
     "test": "node --test"
   },
   "dependencies": {
     "@flowfuse/node-red-dashboard": "1.37.0",
-    "node-red": "5.0.10",
-    "node-red-contrib-opcua": "0.2.355"
+    "node-red": "5.0.10"
   }
 }
