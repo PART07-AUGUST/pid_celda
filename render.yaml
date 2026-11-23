@@ -9,6 +9,8 @@ services:
     autoDeployTrigger: commit
     healthCheckPath: /dashboard
     envVars:
+      - key: NODE_RED_HOST
+        value: 0.0.0.0
       - key: FLOW_FILE
         value: flows.json
       - key: NODE_RED_DISABLE_EDITOR

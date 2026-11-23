@@ -1,7 +1,7 @@
 const path = require('node:path')
 
 module.exports = {
-  uiHost: process.env.NODE_RED_HOST || '127.0.0.1',
+  uiHost: process.env.NODE_RED_HOST || '0.0.0.0',
   uiPort: Number(process.env.PORT || process.env.NODE_RED_PORT || 1880),
   flowFile: 'flows.json',
   userDir: process.env.NODE_RED_USER_DIR || __dirname,
