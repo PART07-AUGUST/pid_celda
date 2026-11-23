@@ -24,9 +24,9 @@ Requiere Docker con el daemon en ejecución:
 docker compose up --build
 ```
 
-Abre el dashboard en [http://localhost:1880/dashboard/celda](http://localhost:1880/dashboard/celda). El editor de Node-RED está en [http://localhost:1880/red/](http://localhost:1880/red/). Los cambios de flujo hechos en el editor quedan en el volumen `pid_celda_data`.
+Abre el editor de Node-RED en [http://localhost:1881/](http://localhost:1881/) y el dashboard PID en [http://localhost:1881/dashboard](http://localhost:1881/dashboard). En la red local también puedes usar la IP de la computadora con el puerto `1881`. Los cambios de flujo hechos en el editor quedan en el volumen `pid_celda_data`. Puedes cambiar el puerto con `DASHBOARD_PORT` si el 1881 ya está ocupado.
 
-Para acceder desde otro equipo de la misma red, define `DASHBOARD_BIND=0.0.0.0` antes de iniciar Docker Compose y limita el acceso a una red de confianza.
+Docker publica el puerto en las interfaces de red para permitir el acceso por IP. El editor no tiene autenticación configurada en esta demo; úsalo solo en una red de confianza y no reenvíes el puerto a Internet. Para volver a limitarlo al equipo local, define `DASHBOARD_BIND=127.0.0.1`.
 
 ## Ejecutar sin Docker
 
@@ -45,4 +45,4 @@ En esta versión el PID se calcula en Node-RED. Antes de una conexión física h
 
 ## Render
 
-`render.yaml` contiene un único servicio Docker para el dashboard simulado. El despliegue lo haces desde tu cuenta de Render; este proyecto no configura acceso al PLC ni túneles a una red industrial.
+`render.yaml` contiene un único servicio Docker para el dashboard simulado. El despliegue lo haces desde tu cuenta de Render; el editor de Node-RED está deshabilitado allí. Este proyecto no configura acceso al PLC ni túneles a una red industrial.

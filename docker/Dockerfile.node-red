@@ -5,7 +5,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 COPY settings.js flows.json ./
 COPY docker/node-red-entrypoint.sh ./docker/node-red-entrypoint.sh
-RUN mkdir -p /data && chown -R node:node /data /opt/celda
+RUN mkdir -p /data && chown node:node /data
 
 USER node
 ENV NODE_RED_HOST=0.0.0.0 NODE_RED_PORT=1880 NODE_RED_USER_DIR=/data

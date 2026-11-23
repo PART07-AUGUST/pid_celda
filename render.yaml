@@ -7,7 +7,7 @@ services:
     dockerfilePath: ./docker/Dockerfile.node-red
     dockerContext: .
     autoDeployTrigger: commit
-    healthCheckPath: /dashboard/celda
+    healthCheckPath: /dashboard
     envVars:
       - key: FLOW_FILE
         value: flows.json

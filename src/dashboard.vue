@@ -12,10 +12,10 @@
     <div class="notice"><span class="notice-mark">i</span><span>{{ state.note || 'Esperando el primer ciclo PID.' }}</span></div>
 
     <section class="readings" aria-label="Variables principales del PID">
-      <article class="read-card setpoint"><div class="card-label">CONSIGNA <code>SP_Nivel</code></div><div class="reading">{{ fmt(value('SP_Nivel')) }}<small>%</small></div><div class="meter"><i :style="{width: pct(value('SP_Nivel')) + '%'}"></i></div></article>
-      <article class="read-card process"><div class="card-label">NIVEL MEDIDO <code>PV_Nivel</code></div><div class="reading">{{ fmt(value('PV_Nivel')) }}<small>%</small></div><div class="meter"><i :style="{width: pct(value('PV_Nivel')) + '%'}"></i></div></article>
+      <article class="read-card setpoint"><div class="card-label">CONSIGNA <code>SP_Nivel</code></div><div class="reading">{{ fmt(tagValue('SP_Nivel')) }}<small>%</small></div><div class="meter"><i :style="{width: pct(tagValue('SP_Nivel')) + '%'}"></i></div></article>
+      <article class="read-card process"><div class="card-label">NIVEL MEDIDO <code>PV_Nivel</code></div><div class="reading">{{ fmt(tagValue('PV_Nivel')) }}<small>%</small></div><div class="meter"><i :style="{width: pct(tagValue('PV_Nivel')) + '%'}"></i></div></article>
       <article class="read-card error"><div class="card-label">ERROR <code>SP − PV</code></div><div class="reading">{{ signed(state.error) }}<small>%</small></div><div class="read-hint">Diferencia entre consigna y nivel medido</div></article>
-      <article class="read-card output"><div class="card-label">SALIDA DE CONTROL <code>Salida_PID</code></div><div class="reading">{{ fmt(value('Salida_PID')) }}<small>%</small></div><div class="meter"><i :style="{width: pct(value('Salida_PID')) + '%'}"></i></div></article>
+      <article class="read-card output"><div class="card-label">SALIDA DE CONTROL <code>Salida_PID</code></div><div class="reading">{{ fmt(tagValue('Salida_PID')) }}<small>%</small></div><div class="meter"><i :style="{width: pct(tagValue('Salida_PID')) + '%'}"></i></div></article>
     </section>
 
     <section class="main-grid">
@@ -35,14 +35,14 @@
       </article>
 
       <article class="panel controller-panel">
-        <div class="panel-title"><div><div class="eyebrow">AJUSTE DEL CONTROLADOR</div><h2>Parámetros PID</h2></div><span class="state-badge" :class="value('PID_Habilitado') ? 'enabled' : 'disabled'">{{ value('PID_Habilitado') ? 'ACTIVO' : 'DETENIDO' }}</span></div>
+        <div class="panel-title"><div><div class="eyebrow">AJUSTE DEL CONTROLADOR</div><h2>Parámetros PID</h2></div><span class="state-badge" :class="tagValue('PID_Habilitado') ? 'enabled' : 'disabled'">{{ tagValue('PID_Habilitado') ? 'ACTIVO' : 'DETENIDO' }}</span></div>
         <div class="param-list">
           <div v-for="item in parameters" :key="item.tag" class="param-row">
             <label :for="'param-'+item.tag"><strong>{{ item.label }}</strong><code>{{ item.tag }}</code></label>
             <div class="param-control"><input :id="'param-'+item.tag" type="number" min="0" max="100" step="0.1" v-model="drafts[item.tag]" @focus="editing[item.tag] = true" @blur="editing[item.tag] = false" @keyup.enter="apply(item.tag)" /><button @click="apply(item.tag)">Aplicar</button></div>
           </div>
         </div>
-        <button class="enable-button" :class="value('PID_Habilitado') ? 'stop' : 'start'" @click="togglePid">{{ value('PID_Habilitado') ? '■  Deshabilitar PID' : '▶  Habilitar PID' }}</button>
+        <button class="enable-button" :class="tagValue('PID_Habilitado') ? 'stop' : 'start'" @click="togglePid">{{ tagValue('PID_Habilitado') ? '■  Deshabilitar PID' : '▶  Habilitar PID' }}</button>
         <p class="controller-note">La salida queda retenida al deshabilitar. La planta simulada responde con retardo.</p>
       </article>
     </section>
@@ -80,7 +80,7 @@ export default {
     }
   },
   methods: {
-    value (tag) { return this.state.values?.[tag] },
+    tagValue (tag) { return this.state.values?.[tag] },
     fmt (value) { return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(1) : '—' },
     signed (value) { return typeof value === 'number' ? `${value > 0 ? '+' : ''}${value.toFixed(1)}` : '—' },
     pct (value) { return typeof value === 'number' ? Math.min(100, Math.max(0, value)) : 0 },
@@ -98,7 +98,7 @@ export default {
       this.editing[tag] = false
       this.send({ topic: 'command', payload: { tag, value } })
     },
-    togglePid () { this.send({ topic: 'command', payload: { tag: 'PID_Habilitado', value: !this.value('PID_Habilitado') } }) }
+    togglePid () { this.send({ topic: 'command', payload: { tag: 'PID_Habilitado', value: !this.tagValue('PID_Habilitado') } }) }
   }
 }
 </script>

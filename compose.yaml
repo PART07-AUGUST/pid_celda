@@ -6,7 +6,7 @@ services:
     environment:
       FLOW_FILE: flows.json
     ports:
-      - "${DASHBOARD_BIND:-127.0.0.1}:1880:1880"
+      - "${DASHBOARD_BIND:-0.0.0.0}:${DASHBOARD_PORT:-1881}:1880"
     volumes:
       - pid_celda_data:/data
     restart: unless-stopped

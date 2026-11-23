@@ -70,6 +70,8 @@ test('el flujo importable solo contiene Node-RED y los siete tags PID', () => {
   assert.equal(ids.size, flow.length)
   assert.equal(flow.some(node => node.type.startsWith('OpcUa')), false)
   assert.equal(flow.some(node => node.type === 'ui-template'), true)
+  assert.equal(flow.find(node => node.type === 'ui-base').path, '/dashboard')
+  assert.equal(flow.find(node => node.type === 'ui-page').path, '')
   for (const node of flow) {
     for (const outputs of node.wires || []) {
       for (const target of outputs) assert.ok(ids.has(target), `referencia ${target} desconocida`)

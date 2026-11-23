@@ -32,7 +32,7 @@ nodes.push({
   sizes: { density: 'default', pagePadding: '0px', groupGap: '0px', groupBorderRadius: '0px', widgetGap: '0px' }
 })
 nodes.push({
-  id: page, type: 'ui-page', name: 'Control PID', ui: base, path: '/celda', icon: 'dashboard',
+  id: page, type: 'ui-page', name: 'Control PID', ui: base, path: '', icon: 'dashboard',
   layout: 'grid', theme, breakpoints: [
     { name: 'Default', px: 0, cols: 3 }, { name: 'Tablet', px: 576, cols: 6 },
     { name: 'Small Desktop', px: 768, cols: 9 }, { name: 'Desktop', px: 1024, cols: 12 }
