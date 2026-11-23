@@ -46,16 +46,16 @@
           </div>
         </div>
         <button class="enable-button" :class="tagValue('PID_Habilitado') ? 'stop' : 'start'" :disabled="!canControl" @click="togglePid">{{ tagValue('PID_Habilitado') ? '■  Deshabilitar PID' : '▶  Habilitar PID' }}</button>
-        <div v-if="state.mode === 'opcua'" class="process-actions">
+        <div v-if="state.mode === 'plc'" class="process-actions">
           <button class="process-start" :disabled="!canControl" @click="pulse('Orden_Star')">▶  Arrancar proceso</button>
           <button class="process-stop" :disabled="!canControl" @click="pulse('Orden_Stop')">■  Detener proceso</button>
         </div>
-        <p class="controller-note">{{ state.mode === 'opcua' ? 'Los mandos esperan confirmación de lectura del PLC.' : 'La salida queda retenida al deshabilitar. La planta simulada responde con retardo.' }}</p>
+        <p class="controller-note">{{ state.mode === 'plc' ? 'Solo lectura: los mandos del PLC están deshabilitados en esta etapa.' : 'La salida queda retenida al deshabilitar. La planta simulada responde con retardo.' }}</p>
       </article>
     </section>
 
-    <section v-if="state.mode !== 'opcua'" class="assumptions"><span>MODELO DE DEMOSTRACIÓN</span><p>Se asume que SP y PV están en porcentaje (0–100), y que una salida mayor aumenta el nivel. Ajusta el sentido, escalamiento y límites con el modelo real antes de conectar un actuador.</p></section>
-    <footer>Node-RED · {{ state.mode === 'opcua' ? 'Tags PLC recibidos por el gateway OPC UA' : 'PID discreto y planta didáctica · Datos simulados' }}</footer>
+    <section v-if="state.mode !== 'plc'" class="assumptions"><span>MODELO DE DEMOSTRACIÓN</span><p>Se asume que SP y PV están en porcentaje (0–100), y que una salida mayor aumenta el nivel. Ajusta el sentido, escalamiento y límites con el modelo real antes de conectar un actuador.</p></section>
+    <footer>Node-RED · {{ state.mode === 'plc' ? 'Tags S7 del PLC recibidos por pasarela HTTPS' : 'PID discreto y planta didáctica · Datos simulados' }}</footer>
   </main>
 </template>
 
@@ -74,20 +74,20 @@ export default {
     }
   },
   computed: {
-    state () { return this.msg?.payload || { mode: 'simulation', values: {}, history: [], online: false } },
+    state () { return this.msg?.payload || { mode: 'simulation', values: {}, history: [], online: false, controlsEnabled: false } },
     modeClass () {
-      if (this.state.mode !== 'opcua') return 'simulation'
+      if (this.state.mode !== 'plc') return 'simulation'
       return this.state.online ? 'online' : 'offline'
     },
     modeLabel () {
-      if (this.state.mode !== 'opcua') return 'SIMULACIÓN'
-      return this.state.online ? 'OPC UA CONECTADO' : 'OPC UA SIN DATOS'
+      if (this.state.mode !== 'plc') return 'SIMULACIÓN'
+      return this.state.online ? 'PLC S7 CONECTADO' : 'PLC S7 SIN DATOS'
     },
     connectionLabel () {
-      if (this.state.mode !== 'opcua') return 'Valores de prueba locales'
-      return this.state.online ? 'Gateway y PLC respondiendo' : 'Esperando datos del gateway'
+      if (this.state.mode !== 'plc') return 'Valores de prueba locales'
+      return this.state.online ? 'Pasarela Python respondiendo' : 'Esperando datos de la pasarela'
     },
-    canControl () { return this.state.mode !== 'opcua' || this.state.online === true }
+    canControl () { return this.state.mode === 'simulation' && this.state.controlsEnabled === true }
   },
   watch: {
     msg: {

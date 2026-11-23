@@ -17,7 +17,7 @@ const nodes = []
 
 nodes.push({
   id: tab, type: 'tab', label: 'PID · Celda de flotación', disabled: false,
-  info: 'Dashboard PID con modo de simulación y API protegida para recibir telemetría OPC UA desde el gateway Python.', env: []
+  info: 'Dashboard PID en modo de simulación o conectado a la pasarela S7 Python mediante HTTPS.', env: []
 })
 nodes.push({
   id: base, type: 'ui-base', name: 'Control PID celda', path: '/dashboard',
@@ -78,9 +78,9 @@ const addHttpEndpoint = (name, path, method, functionFile, y) => {
   nodes.push({ id: response, type: 'http response', z: tab, name: '', statusCode: '', headers: {}, x: 790, y, wires: [] })
 }
 
-addHttpEndpoint('OPC UA · telemetría del gateway', '/api/edge/telemetry', 'post', 'edge-telemetry-function.js', 340)
-addHttpEndpoint('OPC UA · consultar mandos', '/api/edge/commands', 'get', 'edge-commands-function.js', 410)
-addHttpEndpoint('OPC UA · confirmar escritura', '/api/edge/ack', 'post', 'edge-ack-function.js', 480)
+addHttpEndpoint('PLC · telemetría de la pasarela', '/api/edge/telemetry', 'post', 'edge-telemetry-function.js', 340)
+addHttpEndpoint('PLC · consultar mandos', '/api/edge/commands', 'get', 'edge-commands-function.js', 410)
+addHttpEndpoint('PLC · confirmar escritura', '/api/edge/ack', 'post', 'edge-ack-function.js', 480)
 addHttpEndpoint('Render · health check', '/api/healthz', 'get', 'health-function.js', 550)
 
 writeFileSync(join(root, 'flows.json'), JSON.stringify(nodes, null, 2) + '\n')

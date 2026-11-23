@@ -1,75 +1,121 @@
-"""OPC UA edge bridge for the flotation-cell dashboard.
+"""Read-only S7 edge gateway for the Render PID dashboard.
 
-Run this agent on a device that can reach the S7-1200 on its plant Ethernet and
-can make outbound HTTPS requests to the Render dashboard. The PID loop remains
-in the PLC; this process can optionally model the virtual process by updating
-PV_Nivel from Salida_PID.
+This process runs on a computer in the PLC's LAN. It reads DB1 over S7 PUT/GET
+and posts telemetry to the dashboard over outbound HTTPS. It never writes to
+the PLC and does not run Node-RED locally.
 """
 
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
+import json
 import math
 import os
-import tempfile
 import time
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from asyncua import Client, ua
+from s7 import Client, util
 
 
-LOG = logging.getLogger("pid-celda-edge")
-READ_TAGS = (
-    "Nivel_Pulpa", "Caudal_Aire", "Dosificacion_Reactivo", "Agitador_ON",
-    "Recuperacion_Estimada", "Alarma_Nivel", "Simulacion_Activa",
-    "SP_Nivel", "PV_Nivel", "Salida_PID", "Kp", "Ki", "Kd",
-    "PID_Habilitado", "Diferencia_Nivel", "Cambio_Nivel", "Proceso_Activo",
-)
-WRITABLE_NUMERIC = {"SP_Nivel", "Kp", "Ki", "Kd"}
-WRITABLE_BOOLEAN = {"PID_Habilitado"}
-PULSE_TAGS = {"Orden_Star", "Orden_Stop"}
-REQUIRED_TAGS = {"SP_Nivel", "PV_Nivel", "Salida_PID", "Kp", "Ki", "Kd", "PID_Habilitado"}
-FLOAT_TAGS = {
-    "Nivel_Pulpa", "Caudal_Aire", "Dosificacion_Reactivo", "Recuperacion_Estimada",
-    "SP_Nivel", "PV_Nivel", "Salida_PID", "Kp", "Ki", "Kd",
-    "Diferencia_Nivel", "Cambio_Nivel",
+LOG = logging.getLogger("pid-celda-s7-edge")
+
+
+def load_local_env() -> None:
+    """Load the project .env.edge for native Windows runs; preserve OS env values."""
+    env_path = Path(__file__).resolve().parent.parent / ".env.edge"
+    if not env_path.is_file():
+        return
+
+    for line_number, raw_line in enumerate(env_path.read_text(encoding="utf-8").splitlines(), start=1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        key, separator, value = line.partition("=")
+        key = key.strip()
+        if not separator or not key or not key.replace("_", "").isalnum():
+            raise ValueError(f"Formato inválido en .env.edge, línea {line_number}.")
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        os.environ.setdefault(key, value)
+
+
+load_local_env()
+DB_NUMBER = int(os.getenv("PLC_DB_NUMBER", "1"))
+DB_READ_START = 0
+DB_READ_SIZE = 54
+
+REAL_OFFSETS = {
+    "Nivel_Pulpa": 0,
+    "Caudal_Aire": 4,
+    "Dosificacion_Reactivo": 8,
+    "Recuperacion_Estimada": 14,
+    "SP_Nivel": 20,
+    "PV_Nivel": 24,
+    "Salida_PID": 28,
+    "Kp": 32,
+    "Ki": 36,
+    "Kd": 40,
+    "Diferencia_Nivel": 46,
+    "Cambio_Nivel": 50,
+}
+BOOL_OFFSETS = {
+    "Agitador_ON": (12, 0),
+    "Alarma_Nivel": (18, 0),
+    "Simulacion_Activa": (18, 1),
+    "Orden_Star": (18, 2),
+    "Orden_Stop": (18, 3),
+    "Proceso_Activo": (18, 4),
+    "PID_Habilitado": (44, 0),
 }
 
 
-def env_bool(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
+def read_plc_values(client: Client) -> dict[str, Any]:
+    block = client.db_read(DB_NUMBER, DB_READ_START, DB_READ_SIZE)
+    values: dict[str, Any] = {}
+
+    for tag, offset in REAL_OFFSETS.items():
+        value = float(util.get_real(block, offset))
+        if not math.isfinite(value):
+            raise ValueError(f"El valor leído para {tag} no es finito.")
+        values[tag] = value
+
+    for tag, (byte_offset, bit_offset) in BOOL_OFFSETS.items():
+        values[tag] = bool(util.get_bool(block, byte_offset, bit_offset))
+
+    return values
 
 
-def load_node_ids() -> dict[str, str]:
-    raw = os.getenv("OPCUA_NODE_IDS", "").strip()
-    if not raw:
-        return {}
-    parsed = json.loads(raw)
-    if not isinstance(parsed, dict):
-        raise ValueError("OPCUA_NODE_IDS debe ser un objeto JSON {tag: NodeId}.")
-    return {str(tag): str(node_id) for tag, node_id in parsed.items()}
-
-
-def http_json(method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+def post_telemetry(values: dict[str, Any], *, connected: bool, error: str = "") -> dict[str, Any]:
     base_url = os.environ["RENDER_BASE_URL"].rstrip("/")
     token = os.environ["EDGE_API_TOKEN"]
-    body = None if payload is None else json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-    if body is not None:
-        headers["Content-Type"] = "application/json"
-    request = Request(f"{base_url}{path}", data=body, headers=headers, method=method)
+    payload: dict[str, Any] = {
+        "connected": connected,
+        "timestamp": int(time.time() * 1000),
+        "values": values,
+    }
+    if error:
+        payload["error"] = error[:240]
+
+    request = Request(
+        f"{base_url}/api/edge/telemetry",
+        data=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
     try:
         with urlopen(request, timeout=10) as response:
-            content = response.read()
-            return json.loads(content.decode("utf-8")) if content else {}
+            body = response.read()
+            return json.loads(body.decode("utf-8")) if body else {}
     except HTTPError as exc:
         detail = exc.read(512).decode("utf-8", errors="replace")
         raise RuntimeError(f"Render respondió HTTP {exc.code}: {detail}") from exc
@@ -77,279 +123,64 @@ def http_json(method: str, path: str, payload: dict[str, Any] | None = None) -> 
         raise RuntimeError(f"No se pudo contactar con Render: {exc.reason}") from exc
 
 
-async def api(method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    return await asyncio.to_thread(http_json, method, path, payload)
-
-
-def normalize_browse_name(name: str) -> str:
-    cleaned = name.replace('"', "").strip()
-    return cleaned.replace("\\", ".").split(".")[-1].split("/")[-1].strip()
-
-
-async def browse_tag_nodes(client: Client) -> dict[str, Any]:
-    targets = set(READ_TAGS) | set(WRITABLE_BOOLEAN) | set(WRITABLE_NUMERIC) | PULSE_TAGS
-    found: dict[str, Any] = {}
-    visited: set[str] = set()
-    max_nodes = int(os.getenv("OPCUA_BROWSE_MAX_NODES", "4000"))
-    max_depth = int(os.getenv("OPCUA_BROWSE_MAX_DEPTH", "10"))
-
-    async def visit(node: Any, depth: int) -> None:
-        if depth > max_depth or len(visited) >= max_nodes:
-            return
-        try:
-            node_key = node.nodeid.to_string()
-        except Exception:
-            return
-        if node_key in visited:
-            return
-        visited.add(node_key)
-        try:
-            children = await node.get_children()
-        except Exception:
-            return
-        for child in children:
-            try:
-                browse_name = (await child.read_browse_name()).Name
-                logical_name = normalize_browse_name(str(browse_name))
-                if logical_name in targets and logical_name not in found:
-                    found[logical_name] = child
-                if len(visited) < max_nodes:
-                    await visit(child, depth + 1)
-            except Exception:
-                continue
-
-    await visit(client.nodes.objects, 0)
-    return found
-
-
-async def resolve_nodes(client: Client) -> dict[str, Any]:
-    resolved = await browse_tag_nodes(client)
-    explicit = load_node_ids()
-    for tag, node_id in explicit.items():
-        resolved[tag] = client.get_node(node_id)
-    missing = sorted((set(READ_TAGS) | WRITABLE_NUMERIC | WRITABLE_BOOLEAN | PULSE_TAGS) - set(resolved))
+def run() -> None:
+    required = ("PLC_IP", "RENDER_BASE_URL", "EDGE_API_TOKEN")
+    missing = [name for name in required if not os.getenv(name)]
     if missing:
-        LOG.warning("Tags no encontradas por nombre/NodeId: %s", ", ".join(missing))
-    missing_required = sorted(REQUIRED_TAGS - set(resolved))
-    if missing_required:
-        raise RuntimeError("Faltan tags PID obligatorias en OPC UA: " + ", ".join(missing_required))
-    LOG.info("Tags OPC UA resueltas: %s", ", ".join(sorted(resolved)) or "ninguna")
-    return resolved
+        raise RuntimeError("Faltan variables de entorno: " + ", ".join(missing))
 
-
-async def read_values(nodes: dict[str, Any]) -> dict[str, Any]:
-    values: dict[str, Any] = {}
-    for tag in READ_TAGS:
-        node = nodes.get(tag)
-        if node is None:
-            continue
-        try:
-            value = await node.read_value()
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                value = float(value)
-                if math.isfinite(value):
-                    values[tag] = value
-            elif isinstance(value, bool):
-                values[tag] = value
-        except Exception as exc:
-            LOG.debug("No se pudo leer %s: %s", tag, exc)
-    return values
-
-
-async def write_value(node: Any, tag: str, value: Any) -> Any:
-    if tag in WRITABLE_NUMERIC:
-        numeric = float(value)
-        if not math.isfinite(numeric) or numeric < 0 or numeric > 100:
-            raise ValueError(f"{tag} debe estar entre 0 y 100.")
-        await node.write_value(ua.Variant(numeric, ua.VariantType.Float))
-        return await node.read_value()
-    if tag in WRITABLE_BOOLEAN:
-        if not isinstance(value, bool):
-            raise ValueError(f"{tag} requiere un valor booleano.")
-        await node.write_value(ua.Variant(value, ua.VariantType.Boolean))
-        return await node.read_value()
-    if tag in PULSE_TAGS:
-        if value is not True:
-            raise ValueError(f"{tag} acepta únicamente un pulso de activación.")
-        await node.write_value(ua.Variant(True, ua.VariantType.Boolean))
-        await asyncio.sleep(max(0.1, min(1.0, float(os.getenv("PLC_COMMAND_PULSE_SECONDS", "0.25")))))
-        await node.write_value(ua.Variant(False, ua.VariantType.Boolean))
-        confirmed = await node.read_value()
-        if confirmed is not False:
-            raise RuntimeError(f"No se confirmó la liberación del pulso {tag}.")
-        return confirmed
-    raise ValueError(f"La tag {tag} no está autorizada para escritura desde el dashboard.")
-
-
-class CommandJournal:
-    """Avoid repeating a pulse if the ACK request is retried after a network loss."""
-
-    def __init__(self) -> None:
-        data_dir = Path(os.getenv("EDGE_STATE_DIR", "/data"))
-        data_dir.mkdir(parents=True, exist_ok=True)
-        self.path = data_dir / "processed-commands.json"
-        try:
-            self.entries = json.loads(self.path.read_text(encoding="utf-8"))
-            if not isinstance(self.entries, dict):
-                self.entries = {}
-        except (OSError, json.JSONDecodeError):
-            self.entries = {}
-
-    def get(self, command_id: str) -> dict[str, Any] | None:
-        return self.entries.get(command_id)
-
-    def save(self, command_id: str, result: dict[str, Any]) -> None:
-        self.entries[command_id] = result
-        self.entries = dict(list(self.entries.items())[-500:])
-        self.persist()
-
-    def remove(self, command_id: str) -> None:
-        self.entries.pop(command_id, None)
-        self.persist()
-
-    def persist(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=self.path.parent, delete=False) as tmp:
-            json.dump(self.entries, tmp, separators=(",", ":"))
-            temp_name = tmp.name
-        os.replace(temp_name, self.path)
-
-
-async def handle_commands(nodes: dict[str, Any], journal: CommandJournal) -> None:
-    response = await api("GET", "/api/edge/commands")
-    commands = response.get("commands", [])
-    for command in commands:
-        command_id = command.get("id")
-        tag = command.get("tag")
-        if not isinstance(command_id, str) or not isinstance(tag, str):
-            continue
-
-        prior = journal.get(command_id)
-        if prior is None:
-            try:
-                node = nodes.get(tag)
-                if node is None:
-                    raise KeyError(f"No se encontró el NodeId de {tag}.")
-                confirmed = await write_value(node, tag, command.get("value"))
-                target = command.get("value")
-                if tag not in PULSE_TAGS and confirmed != target:
-                    if isinstance(target, float) and isinstance(confirmed, (int, float)):
-                        if abs(float(confirmed) - target) > 0.001:
-                            raise RuntimeError(f"Lectura de confirmación distinta: {confirmed}")
-                    else:
-                        raise RuntimeError(f"Lectura de confirmación distinta: {confirmed}")
-                prior = {"id": command_id, "tag": tag, "ok": True, "value": confirmed, "pulse": tag in PULSE_TAGS}
-            except Exception as exc:
-                prior = {"id": command_id, "tag": tag, "ok": False, "error": str(exc)[:240]}
-            journal.save(command_id, prior)
-
-        try:
-            await api("POST", "/api/edge/ack", prior)
-            journal.remove(command_id)
-        except Exception as exc:
-            LOG.warning("ACK pendiente para %s: %s", command_id, exc)
-
-
-async def connected_loop(client: Client, nodes: dict[str, Any], journal: CommandJournal) -> None:
-    soft_sensor = env_bool("SOFT_SENSOR_ENABLED", True)
-    pv_tag = os.getenv("SOFT_SENSOR_PV_TAG", "PV_Nivel")
-    tick = max(0.2, float(os.getenv("EDGE_POLL_SECONDS", "1.0")))
-    time_constant = max(1.0, float(os.getenv("SOFT_SENSOR_TIME_CONSTANT", "18")))
-    last_tick = time.monotonic()
-    disturbance_phase = time.time()
-    last_report = 0.0
+    plc_ip = os.environ["PLC_IP"]
+    plc_port = int(os.getenv("PLC_PORT", "102"))
+    rack = int(os.getenv("PLC_RACK", "0"))
+    slot = int(os.getenv("PLC_SLOT", "1"))
+    poll_seconds = max(0.5, float(os.getenv("PLC_POLL_SECONDS", "1.0")))
+    reconnect_seconds = max(1.0, float(os.getenv("PLC_RECONNECT_SECONDS", "5")))
+    last_api_warning = 0.0
 
     while True:
-        started = time.monotonic()
-        values = await read_values(nodes)
+        client = Client()
+        try:
+            LOG.info("Conectando al PLC S7 %s:%s, rack %s, slot %s", plc_ip, plc_port, rack, slot)
+            client.connect(plc_ip, rack, slot, plc_port)
+            LOG.info("Sesión S7 lista; DB%d se leerá cada %.1f s", DB_NUMBER, poll_seconds)
 
-        if soft_sensor and pv_tag in nodes and isinstance(values.get("Salida_PID"), (int, float)):
-            current_pv = float(values.get(pv_tag, values.get("PV_Nivel", 50.0)))
-            output = max(0.0, min(100.0, float(values["Salida_PID"])))
-            dt = max(0.1, min(2.0, started - last_tick))
-            target = max(0.0, min(100.0, output + 1.5 * math.sin((time.time() - disturbance_phase) / 18.0)))
-            next_pv = max(0.0, min(100.0, current_pv + (target - current_pv) * min(1.0, dt / time_constant)))
+            while True:
+                cycle_started = time.monotonic()
+                values = read_plc_values(client)
+                try:
+                    post_telemetry(values, connected=True)
+                except Exception as exc:
+                    if time.monotonic() - last_api_warning >= 5:
+                        LOG.warning("No se pudo publicar telemetría en Render: %s", exc)
+                        last_api_warning = time.monotonic()
+                else:
+                    last_api_warning = 0.0
+                    LOG.debug("SP_Nivel=%s, PV_Nivel=%s, Salida_PID=%s", values["SP_Nivel"], values["PV_Nivel"], values["Salida_PID"])
+
+                elapsed = time.monotonic() - cycle_started
+                time.sleep(max(0.0, poll_seconds - elapsed))
+
+        except KeyboardInterrupt:
+            LOG.info("Pasarela detenida por el operador.")
+            return
+        except Exception as exc:
+            LOG.error("Conexión S7 interrumpida: %s", exc)
             try:
-                await nodes[pv_tag].write_value(ua.Variant(next_pv, ua.VariantType.Float))
-                values[pv_tag] = next_pv
-                if pv_tag == "PV_Nivel":
-                    values["PV_Nivel"] = next_pv
-                values["Cambio_Nivel"] = next_pv - current_pv
-                if isinstance(values.get("SP_Nivel"), (int, float)):
-                    values["Diferencia_Nivel"] = float(values["SP_Nivel"]) - next_pv
-            except Exception as exc:
-                LOG.warning("No se pudo escribir el soft sensor %s: %s", pv_tag, exc)
-
-        try:
-            await api("POST", "/api/edge/telemetry", {
-                "connected": True,
-                "timestamp": int(time.time() * 1000),
-                "values": values,
-            })
-            last_report = time.monotonic()
-        except Exception as exc:
-            if time.monotonic() - last_report > 5:
-                LOG.warning("No se pudo publicar telemetría en Render: %s", exc)
-                last_report = time.monotonic()
-
-        try:
-            await handle_commands(nodes, journal)
-        except Exception as exc:
-            LOG.warning("No se pudieron consultar mandos de Render: %s", exc)
-
-        last_tick = started
-        await asyncio.sleep(max(0.0, tick - (time.monotonic() - started)))
-
-
-async def run() -> None:
-    for required in ("OPCUA_ENDPOINT", "RENDER_BASE_URL", "EDGE_API_TOKEN"):
-        if not os.getenv(required):
-            raise RuntimeError(f"Falta configurar la variable {required}.")
-
-    journal = CommandJournal()
-    reconnect_seconds = max(1.0, float(os.getenv("OPCUA_RECONNECT_SECONDS", "5")))
-    while True:
-        client = Client(url=os.environ["OPCUA_ENDPOINT"], timeout=10)
-        username = os.getenv("OPCUA_USERNAME", "")
-        password = os.getenv("OPCUA_PASSWORD", "")
-        security = os.getenv("OPCUA_SECURITY_STRING", "")
-        if username:
-            client.set_user(username)
-        if password:
-            client.set_password(password)
-
-        try:
-            if security:
-                await client.set_security_string(security)
-            LOG.info("Conectando al servidor OPC UA %s", os.environ["OPCUA_ENDPOINT"])
-            await client.connect()
-            nodes = await resolve_nodes(client)
-            LOG.info("Sesión OPC UA establecida; inicia envío de telemetría a Render.")
-            await connected_loop(client, nodes, journal)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            LOG.error("Conexión OPC UA/gateway interrumpida: %s", exc)
-            try:
-                await api("POST", "/api/edge/telemetry", {
-                    "connected": False,
-                    "timestamp": int(time.time() * 1000),
-                    "values": {},
-                    "error": str(exc)[:240],
-                })
+                post_telemetry({}, connected=False, error=str(exc))
             except Exception as report_exc:
                 LOG.warning("No se pudo notificar la desconexión a Render: %s", report_exc)
         finally:
             try:
-                await client.disconnect()
+                client.disconnect()
             except Exception:
                 pass
-        await asyncio.sleep(reconnect_seconds)
+
+        time.sleep(reconnect_seconds)
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
-    try:
-        asyncio.run(run())
-    except KeyboardInterrupt:
-        LOG.info("Gateway detenido por el operador.")
+    logging.basicConfig(
+        level=os.getenv("LOG_LEVEL", "INFO"),
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
+    run()

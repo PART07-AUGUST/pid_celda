@@ -12,5 +12,6 @@ projects/
 .env*
 certs/
 .venv/
+.venv-edge/
 __pycache__/
 *.py[cod]

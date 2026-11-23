@@ -3,7 +3,7 @@ const crypto = require('node:crypto')
 
 const dashboardUser = process.env.DASHBOARD_AUTH_USER || ''
 const dashboardPassword = process.env.DASHBOARD_AUTH_PASSWORD || ''
-const dashboardAuthRequired = String(process.env.PID_DATA_MODE || 'simulation').toLowerCase() === 'opcua'
+const dashboardAuthRequired = ['plc', 'opcua'].includes(String(process.env.PID_DATA_MODE || 'simulation').toLowerCase())
 
 function safeEqual(left, right) {
   const a = Buffer.from(String(left))
@@ -30,7 +30,7 @@ function isAuthorized(request) {
 function dashboardAuth(request, response, next) {
   if (!dashboardAuthRequired && !dashboardUser && !dashboardPassword) return next()
   if (!dashboardUser || !dashboardPassword) {
-    response.status(503).send('Configura DASHBOARD_AUTH_USER y DASHBOARD_AUTH_PASSWORD antes de habilitar OPC UA.')
+    response.status(503).send('Configura DASHBOARD_AUTH_USER y DASHBOARD_AUTH_PASSWORD antes de habilitar la conexión al PLC.')
     return
   }
   if (isAuthorized(request)) return next()

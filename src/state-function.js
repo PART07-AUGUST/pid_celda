@@ -1,6 +1,6 @@
 const now = Date.now()
 const configuredMode = String(env.get('PID_DATA_MODE') || 'simulation').toLowerCase()
-const mode = configuredMode === 'opcua' ? 'opcua' : 'simulation'
+const mode = ['plc', 'opcua'].includes(configuredMode) ? 'plc' : 'simulation'
 const staleAfter = Math.max(1500, Number(env.get('EDGE_STALE_MS')) || 5000)
 const numericLimits = {
   SP_Nivel: [0, 100],
@@ -8,8 +8,6 @@ const numericLimits = {
   Ki: [0, 100],
   Kd: [0, 100]
 }
-const booleanWrites = ['PID_Habilitado']
-const pulseWrites = ['Orden_Star', 'Orden_Stop']
 
 let state = flow.get('pidState')
 if (!state || state.mode !== mode) {
@@ -30,15 +28,15 @@ if (!state || state.mode !== mode) {
     error: null,
     note: mode === 'simulation'
       ? 'Simulación local lista. No hay conexión con el PLC.'
-      : 'Esperando datos del gateway OPC UA.',
+      : 'Esperando datos de la pasarela Python S7.',
     online: mode === 'simulation',
+    controlsEnabled: mode === 'simulation',
     history: [],
     integral: 0,
     previousPV: 50,
     previousTick: now,
     lastSeen: null,
-    lastHistoryAt: null,
-    lastAckId: null
+    lastHistoryAt: null
   }
 }
 
@@ -48,30 +46,8 @@ const v = state.values
 if (msg.topic === 'command') {
   const { tag, value } = msg.payload || {}
 
-  if (mode === 'opcua') {
-    const isNumeric = Object.prototype.hasOwnProperty.call(numericLimits, tag)
-    const isBoolean = booleanWrites.includes(tag) && typeof value === 'boolean'
-    const isPulse = pulseWrites.includes(tag) && value === true
-    let valid = isBoolean || isPulse
-
-    if (isNumeric) {
-      const [min, max] = numericLimits[tag]
-      const numeric = Number(value)
-      valid = Number.isFinite(numeric) && numeric >= min && numeric <= max
-    }
-
-    if (!valid) {
-      state.note = `Mando OPC UA rechazado: ${tag || 'variable'} no permitido o fuera de rango.`
-    } else if (!state.online) {
-      state.note = 'Mando bloqueado: no hay conexión vigente con el gateway OPC UA.'
-    } else {
-      const queue = flow.get('edgeCommands') || []
-      const id = `${now.toString(36)}-${Math.random().toString(36).slice(2, 10)}`
-      const command = { id, tag, value: isNumeric ? Number(value) : value, createdAt: now }
-      queue.push(command)
-      flow.set('edgeCommands', queue.slice(-100))
-      state.note = `${tag}: mando enviado al gateway; esperando confirmación de lectura.`
-    }
+  if (mode === 'plc') {
+    state.note = 'Conexión al PLC en solo lectura; los mandos están deshabilitados.'
   } else if (tag === 'PID_Habilitado' && typeof value === 'boolean') {
     if (value && !v.PID_Habilitado) {
       state.integral = 0
@@ -95,12 +71,12 @@ if (msg.topic === 'command') {
 }
 
 if (msg.topic === 'tick') {
-  if (mode === 'opcua') {
+  if (mode === 'plc') {
     const telemetry = flow.get('edgeTelemetry')
     const isFresh = telemetry && telemetry.connected === true && now - telemetry.receivedAt <= staleAfter
-    const ack = flow.get('edgeAck')
 
     state.online = Boolean(isFresh)
+    state.controlsEnabled = false
     if (isFresh) {
       state.values = telemetry.values || {}
       state.lastSeen = telemetry.receivedAt
@@ -118,24 +94,14 @@ if (msg.topic === 'tick') {
       state.error = typeof state.values.Diferencia_Nivel === 'number'
         ? state.values.Diferencia_Nivel
         : (Number(state.values.SP_Nivel) - Number(state.values.PV_Nivel))
-      if (ack && ack.id && ack.id !== state.lastAckId) {
-        state.lastAckId = ack.id
-        state.note = ack.ok
-          ? `${ack.tag} confirmado por lectura OPC UA.`
-          : `Fallo al escribir ${ack.tag} por OPC UA: ${ack.error || 'sin detalle'}.`
-      } else if (telemetry.error) {
-        state.note = `Gateway conectado con aviso: ${telemetry.error}`
-      } else if (!state.note || state.note.startsWith('Esperando') || state.note.startsWith('Sin datos')) {
-        state.note = 'Conectado al gateway OPC UA; datos recibidos.'
-      }
+      state.note = telemetry.error
+        ? `Pasarela conectada con aviso: ${telemetry.error}`
+        : 'PLC conectado; datos recibidos por la pasarela S7.'
     } else {
-      // Discard queued writes on stale telemetry so reconnecting cannot replay old commands.
-      flow.set('edgeCommands', [])
       state.note = telemetry && telemetry.error
-        ? `Gateway OPC UA desconectado: ${telemetry.error}`
-        : 'Sin datos OPC UA recientes. Los mandos están bloqueados.'
+        ? `Pasarela S7 desconectada: ${telemetry.error}`
+        : 'Sin datos S7 recientes. El dashboard permanece en solo lectura.'
     }
-    state.pendingCommands = (flow.get('edgeCommands') || []).length
   } else {
     const dt = clamp((now - state.previousTick) / 1000, 0.1, 2)
     state.previousTick = now
@@ -165,6 +131,7 @@ if (msg.topic === 'tick') {
     state.error = v.Diferencia_Nivel
     state.lastSeen = now
     state.online = true
+    state.controlsEnabled = true
     state.history.push({ t: now, sp: v.SP_Nivel, pv: v.PV_Nivel, output: v.Salida_PID })
     if (state.history.length > 90) state.history.shift()
   }
@@ -172,21 +139,21 @@ if (msg.topic === 'tick') {
 
 flow.set('pidState', state)
 node.status({
-  fill: state.online ? (mode === 'opcua' ? 'blue' : 'green') : 'grey',
+  fill: state.online ? (mode === 'plc' ? 'blue' : 'green') : 'grey',
   shape: 'dot',
-  text: mode === 'opcua'
-    ? (state.online ? 'gateway OPC UA conectado' : 'esperando gateway OPC UA')
+  text: mode === 'plc'
+    ? (state.online ? 'pasarela S7 conectada · solo lectura' : 'esperando pasarela S7')
     : (v.PID_Habilitado ? `PID activo · SP ${v.SP_Nivel.toFixed(1)} · PV ${v.PV_Nivel.toFixed(1)}` : 'simulación PID en espera')
 })
 
 return { payload: {
   mode,
   online: state.online,
+  controlsEnabled: state.controlsEnabled,
   values: state.values,
   error: state.error,
   history: state.history,
   note: state.note,
   updatedAt: now,
-  lastSeen: state.lastSeen,
-  pendingCommands: state.pendingCommands || 0
+  lastSeen: state.lastSeen
 } }
