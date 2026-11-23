@@ -11,7 +11,9 @@ if (!state) {
       Kp: 2,
       Ki: 0.1,
       Kd: 0,
-      PID_Habilitado: false
+      PID_Habilitado: false,
+      Diferencia_Nivel: 0,
+      Cambio_Nivel: 0
     },
     error: 10,
     note: 'Simulación local lista. No hay conexión con el PLC.',
@@ -56,6 +58,7 @@ if (msg.topic === 'tick') {
 
   if (v.PID_Habilitado) {
     const error = v.SP_Nivel - v.PV_Nivel
+    v.Diferencia_Nivel = error
     const proportional = v.Kp * error
     const derivative = -v.Kd * (v.PV_Nivel - state.previousPV) / dt
     const candidateIntegral = state.integral + v.Ki * error * dt
@@ -71,8 +74,11 @@ if (msg.topic === 'tick') {
   const disturbance = 1.5 * Math.sin(now / 18000)
   const target = clamp(v.Salida_PID + disturbance)
   const timeConstant = 18
+  const previousPV = v.PV_Nivel
   v.PV_Nivel = clamp(v.PV_Nivel + (target - v.PV_Nivel) * Math.min(1, dt / timeConstant))
-  state.error = v.SP_Nivel - v.PV_Nivel
+  v.Diferencia_Nivel = v.SP_Nivel - v.PV_Nivel
+  v.Cambio_Nivel = v.PV_Nivel - previousPV
+  state.error = v.Diferencia_Nivel
   state.lastSeen = now
   state.history.push({ t: now, sp: v.SP_Nivel, pv: v.PV_Nivel, output: v.Salida_PID })
   if (state.history.length > 90) state.history.shift()

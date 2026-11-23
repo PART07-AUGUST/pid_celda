@@ -13,6 +13,8 @@ Dashboard de Node-RED para visualizar y ajustar un lazo PID de nivel usando los 
 | `Ki` | Ganancia integral, ajustable de 0 a 100 |
 | `Kd` | Ganancia derivativa, ajustable de 0 a 100 |
 | `PID_Habilitado` | Habilita o detiene el cálculo PID |
+| `Diferencia_Nivel` | Error `SP_Nivel - PV_Nivel` en la simulación |
+| `Cambio_Nivel` | Variación del PV durante el último ciclo de la simulación |
 
 El ciclo PID corre cada segundo, usa derivada sobre la medición y limita la integral cuando la salida satura. Al deshabilitar, la salida queda retenida en el valor actual. Los valores iniciales (`SP=60`, `PV=50`, `Kp=2`, `Ki=0.1`, `Kd=0`) se tomaron de la captura compartida.
 
@@ -41,7 +43,7 @@ El flujo importable está en `flows.json`. El código de cálculo está en `src/
 
 El modelo supone que consigna y medición están en porcentaje de 0 a 100, que una salida mayor aumenta el nivel, y representa la planta con un retardo de primer orden más una pequeña perturbación. Es solo una planta didáctica para observar el comportamiento y ajustar parámetros; no es un modelo validado de flotación ni una conexión con el PID del PLC.
 
-En esta versión el PID se calcula en Node-RED. Antes de una conexión física hay que definir un enlace directo con el PLC que no use OPC UA, confirmar el escalamiento/unidades/sentido de acción de `Salida_PID` y evitar que el PID de Node-RED y `FC_Control_Flotacion` actúen a la vez sobre la misma salida. El dashboard actual no debe usarse para accionar el proceso real.
+En esta versión el PID se calcula en Node-RED. La última captura muestra la IP y los offsets de `DB_Flotacion`; la IP se mantiene fuera de Git. Para una conexión S7 directa sin OPC UA, TIA debe permitir PUT/GET y `DB_Flotacion` debe usar acceso estándar (no optimizado). La captura muestra offsets, pero no confirma esos dos ajustes. Confirma también el sentido de `Salida_PID` y evita que el PID de Node-RED y el bloque PID del PLC actúen a la vez sobre la misma salida. El dashboard actual no escribe en el PLC.
 
 ## Render
 

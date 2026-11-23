@@ -22,11 +22,12 @@ function harness() {
   return { send, advance: ms => { now += ms }, get state () { return stored } }
 }
 
-test('mantiene los siete tags PID y limita los ajustes a 0–100', () => {
+test('mantiene los nueve tags PID y limita los ajustes a 0–100', () => {
   const h = harness()
   const view = h.send('tick').payload
   assert.deepEqual(Object.keys(view.values), [
-    'SP_Nivel', 'PV_Nivel', 'Salida_PID', 'Kp', 'Ki', 'Kd', 'PID_Habilitado'
+    'SP_Nivel', 'PV_Nivel', 'Salida_PID', 'Kp', 'Ki', 'Kd',
+    'PID_Habilitado', 'Diferencia_Nivel', 'Cambio_Nivel'
   ])
   h.send('command', { tag: 'SP_Nivel', value: 101 })
   assert.equal(h.state.values.SP_Nivel, 60)
@@ -47,6 +48,8 @@ test('el PID cambia su salida y la planta simulada se acerca a la consigna', () 
     view = h.send('tick').payload
   }
   assert.ok(view.values.PV_Nivel > 50)
+  assert.ok(Math.abs(view.values.Diferencia_Nivel - (view.values.SP_Nivel - view.values.PV_Nivel)) < 1e-9)
+  assert.ok(Number.isFinite(view.values.Cambio_Nivel))
   assert.ok(Math.abs(view.error) < initialError)
   assert.ok(view.values.Salida_PID >= 0 && view.values.Salida_PID <= 100)
 })
@@ -64,7 +67,7 @@ test('al deshabilitar el PID se retiene la salida actual', () => {
   assert.equal(view.values.Salida_PID, output)
 })
 
-test('el flujo importable solo contiene Node-RED y los siete tags PID', () => {
+test('el flujo importable solo contiene Node-RED y los tags PID', () => {
   const flow = JSON.parse(readFileSync(join(root, 'flows.json'), 'utf8'))
   const ids = new Set(flow.map(node => node.id))
   assert.equal(ids.size, flow.length)
