@@ -7,12 +7,22 @@ services:
     dockerfilePath: ./docker/Dockerfile.node-red
     dockerContext: .
     autoDeployTrigger: commit
-    healthCheckPath: /dashboard
+    healthCheckPath: /api/healthz
     envVars:
       - key: NODE_RED_HOST
         value: 0.0.0.0
       - key: FLOW_FILE
         value: flows.json
+      - key: PID_DATA_MODE
+        value: simulation
+      - key: EDGE_STALE_MS
+        value: "5000"
+      - key: EDGE_API_TOKEN
+        sync: false
+      - key: DASHBOARD_AUTH_USER
+        sync: false
+      - key: DASHBOARD_AUTH_PASSWORD
+        sync: false
       - key: NODE_RED_DISABLE_EDITOR
         value: "1"
       - key: NODE_RED_CREDENTIAL_SECRET

@@ -1,0 +1,12 @@
+services:
+  opcua-edge-gateway:
+    build:
+      context: ./edge-gateway
+    env_file:
+      - .env.edge
+    volumes:
+      - edge_gateway_data:/data
+    restart: unless-stopped
+
+volumes:
+  edge_gateway_data:
