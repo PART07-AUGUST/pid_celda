@@ -1,0 +1,33 @@
+services:
+  node-red:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.node-red
+    env_file:
+      - path: .env.plc
+        required: false
+    environment:
+      FLOW_FILE: flows-plc.json
+      CELDA_MODE: opc
+    ports:
+      - "${DASHBOARD_BIND:-127.0.0.1}:1880:1880"
+    volumes:
+      - node_red_plc_data:/data
+      - ./certs:/certs:ro
+    restart: unless-stopped
+
+  softsensor:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.softsensor
+    env_file:
+      - path: .env.plc
+        required: false
+    environment:
+      SOFTSENSOR_MODE: client
+    volumes:
+      - ./certs:/certs:ro
+    restart: unless-stopped
+
+volumes:
+  node_red_plc_data:

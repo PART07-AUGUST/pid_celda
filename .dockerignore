@@ -1,0 +1,15 @@
+.git
+.gitignore
+node_modules
+*.log
+.env*
+!.env.plc.example
+certs
+context
+lib
+projects
+test
+__pycache__
+*.pyc
+flows_cred.json
+flows.json.backup

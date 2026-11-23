@@ -1,0 +1,16 @@
+node_modules/
+.config.*.json
+.config.runtime.json*
+.sessions.json
+.flows.json.backup
+flows_cred.json
+flows.json.backup
+context/
+lib/
+projects/
+*.log
+.env.plc
+certs/
+.venv/
+__pycache__/
+*.py[cod]

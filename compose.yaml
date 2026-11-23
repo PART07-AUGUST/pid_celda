@@ -1,0 +1,30 @@
+services:
+  softsensor:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.softsensor
+    environment:
+      SOFTSENSOR_MODE: server
+      DEMO_OPCUA_BIND: opc.tcp://0.0.0.0:4840/celda/
+    ports:
+      - "127.0.0.1:4840:4840"
+    restart: unless-stopped
+
+  node-red:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.node-red
+    depends_on:
+      - softsensor
+    environment:
+      FLOW_FILE: flows-opc-demo.json
+      CELDA_MODE: opc
+      OPCUA_HOST: softsensor
+    ports:
+      - "${DASHBOARD_BIND:-127.0.0.1}:1880:1880"
+    volumes:
+      - node_red_demo_data:/data
+    restart: unless-stopped
+
+volumes:
+  node_red_demo_data:
